@@ -1,0 +1,14 @@
+# Core dependencies for MCP Template Server (SDK-based)
+mcp>=1.0.0                 # Official Anthropic MCP SDK
+pydantic>=2.0,<3.0         # Data validation and serialization
+anyio>=4.0,<5.0            # Async utilities (MCP SDK compatibility)
+aiofiles>=23.0             # Async file operations for tools
+httpx>=0.25,<1.0           # HTTP client for tools
+
+# Development dependencies
+pytest>=7.0                # Testing framework
+pytest-asyncio>=0.21       # Async testing support
+pytest-cov>=4.0            # Coverage reporting
+ruff>=0.1                  # Linting and formatting
+mypy>=1.5                  # Type checking
+black>=23.0                # Code formatting

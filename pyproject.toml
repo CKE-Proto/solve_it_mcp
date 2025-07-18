@@ -1,0 +1,42 @@
+[project]
+name = "solveit-mcp-server"
+version = "0.1.0"
+description = "MCP server providing LLM access to the SOLVE-IT Digital Forensics Knowledge Base"
+requires-python = ">=3.7"
+dependencies = [
+    "mcp>=1.0.0",
+    "pydantic>=2.0,<3.0",
+    "aiofiles>=23.0",
+    "httpx>=0.25,<1.0",
+    "anyio>=4.0,<5.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-asyncio>=0.21",
+    "pytest-cov>=4.0",
+    "ruff>=0.1",
+    "mypy>=1.5",
+    "black>=23.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project.scripts]
+solveit-mcp-server = "server:main"
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+
+[tool.black]
+line-length = 88
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
