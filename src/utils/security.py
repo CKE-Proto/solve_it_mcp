@@ -336,10 +336,10 @@ def validate_tool_security_config(tool: 'BaseTool') -> None:
     Raises:
         SecurityConfigError: If tool security configuration is invalid.
     """
-    from .security_middleware import SecurityConfig
+    from .shared_security import get_shared_security_config
     
-    # Get global security limits
-    config = SecurityConfig()
+    # Get shared security configuration
+    config = get_shared_security_config()
     
     # Validate execution timeout configuration
     if hasattr(tool, 'execution_timeout'):

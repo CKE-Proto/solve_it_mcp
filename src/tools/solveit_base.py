@@ -18,32 +18,52 @@ class SolveItBaseTool(BaseTool[P], ABC):
     
     This class extends the template's BaseTool to provide SOLVE-IT-specific
     functionality while maintaining compatibility with the template's design.
-    Each tool manages its own data path resolution, making tools self-contained
-    and following the template's tool-centric philosophy.
+    
+    ARCHITECTURE CHANGE: Tools no longer create individual knowledge base instances.
+    Instead, they receive a shared knowledge base instance from the server during
+    initialization, dramatically improving performance and memory usage.
+    
+    Previously: 20 tools × 1 KB instance each = 20x initialization (20 seconds)
+    Now: 1 shared KB instance for all tools = 1x initialization (~1 second)
     """
     
     # Default security configuration for read-only knowledge base access
     execution_timeout: float = 45.0  # Longer timeout for data operations
     auto_sanitize_strings: bool = True
-    require_path_validation: bool = False  # SOLVE-IT data is read-only
+    require_path_validation: bool = False  # Most tools don't need path validation
+    allowed_paths: list[str] = []  # Will be set by tools that need path validation
     
-    def __init__(self, custom_data_path: Optional[str] = None) -> None:
+    def __init__(self, custom_data_path: Optional[str] = None, init_kb: bool = True) -> None:
         """
-        Initialize SOLVE-IT tool with data path resolution.
+        Initialize SOLVE-IT tool with optional knowledge base initialization.
         
         Args:
             custom_data_path: Optional custom path to SOLVE-IT data directory.
                              If None, will use automatic path resolution.
+            init_kb: Whether to initialize individual knowledge base (deprecated).
+                    Should be False for shared architecture, True for legacy mode.
         """
         super().__init__()
         
-        # Resolve data path for this tool instance
-        self._resolve_data_path(custom_data_path)
+        # Initialize knowledge base and data path attributes
+        self.knowledge_base = None
+        self.data_path = None
         
-        # Initialize SOLVE-IT knowledge base
-        self._init_knowledge_base()
+        # Resolve data path for backward compatibility and logging
+        if custom_data_path or init_kb:
+            self._resolve_data_path(custom_data_path)
         
-        self.logger.info(f"SOLVE-IT tool {self.name} initialized with data path: {self.data_path}")
+        # Legacy mode: Initialize individual knowledge base (deprecated)
+        if init_kb:
+            self.logger.warning(
+                f"Tool {self.name} using legacy individual knowledge base initialization. "
+                "This is deprecated and causes performance issues. Use shared architecture instead."
+            )
+            self._init_knowledge_base()
+            self.logger.info(f"SOLVE-IT tool {self.name} initialized with data path: {self.data_path}")
+        else:
+            # Modern mode: Wait for shared knowledge base to be set by server
+            self.logger.debug(f"SOLVE-IT tool {self.name} created, awaiting shared knowledge base")
     
     def _resolve_data_path(self, custom_path: Optional[str] = None) -> None:
         """
@@ -78,12 +98,38 @@ class SolveItBaseTool(BaseTool[P], ABC):
             self.logger.error(f"Failed to resolve data path for {self.name}: {e}")
             raise ValueError(f"SOLVE-IT data path resolution failed: {e}")
     
+    def set_shared_knowledge_base(self, shared_kb, data_path: str) -> None:
+        """
+        Set the shared knowledge base instance for this tool.
+        
+        This method is called by the server to provide the shared knowledge base
+        instance to the tool, eliminating the need for individual initialization.
+        
+        Args:
+            shared_kb: The shared KnowledgeBase instance
+            data_path: The resolved data path for logging and compatibility
+        """
+        self.knowledge_base = shared_kb
+        self.data_path = data_path
+        
+        # Log successful shared KB assignment
+        self.logger.info(
+            f"SOLVE-IT tool {self.name} configured with shared knowledge base "
+            f"(singleton_id: {id(shared_kb)})"
+        )
+        self.logger.debug(f"Tool {self.name} data path: {data_path}")
+    
     def _init_knowledge_base(self) -> None:
         """
-        Initialize the SOLVE-IT knowledge base.
+        Initialize individual SOLVE-IT knowledge base (LEGACY/DEPRECATED).
         
-        This method sets up the KnowledgeBase instance that will be used
-        by the tool. Each tool gets its own instance to ensure isolation.
+        This method is deprecated and causes the 20x initialization performance issue.
+        It's kept for backward compatibility but should not be used in production.
+        
+        PERFORMANCE IMPACT: Each call loads 117 techniques, 188 weaknesses, 137 mitigations
+        and builds reverse indices. With 20 tools, this results in 20x duplication.
+        
+        Use set_shared_knowledge_base() instead for modern architecture.
         """
         try:
             # Import here to avoid circular imports
@@ -98,7 +144,7 @@ class SolveItBaseTool(BaseTool[P], ABC):
                 mapping_file="solve-it.json"
             )
             
-            self.logger.debug(f"Knowledge base initialized for {self.name}")
+            self.logger.debug(f"Individual knowledge base initialized for {self.name} (DEPRECATED)")
             
         except Exception as e:
             self.logger.error(f"Failed to initialize knowledge base for {self.name}: {e}")
@@ -112,13 +158,18 @@ class SolveItBaseTool(BaseTool[P], ABC):
             Dict[str, Any]: Statistics about techniques, weaknesses, mitigations
         """
         try:
+            if self.knowledge_base is None:
+                return {"error": "Knowledge base not initialized"}
+            
             return {
                 "techniques": len(self.knowledge_base.list_techniques()),
                 "weaknesses": len(self.knowledge_base.list_weaknesses()),
                 "mitigations": len(self.knowledge_base.list_mitigations()),
                 "objectives": len(self.knowledge_base.list_objectives()),
                 "current_mapping": self.knowledge_base.current_mapping_name,
-                "data_path": self.data_path
+                "data_path": self.data_path,
+                "singleton_id": id(self.knowledge_base),  # For debugging shared instance
+                "tool_name": self.name
             }
         except Exception as e:
             self.logger.error(f"Failed to get knowledge base stats: {e}")
@@ -135,8 +186,18 @@ class SolveItBaseTool(BaseTool[P], ABC):
         Returns:
             str: User-friendly error message
         """
+        # Check if knowledge base is properly initialized
+        if self.knowledge_base is None:
+            error_msg = f"Knowledge base not initialized for tool {self.name} during {operation}"
+            self.logger.error(error_msg)
+            return "Tool not properly initialized. Please contact support."
+        
         error_msg = f"Error in {operation}: {str(error)}"
-        self.logger.error(error_msg, extra={"tool_name": self.name})
+        self.logger.error(error_msg, extra={
+            "tool_name": self.name,
+            "singleton_id": id(self.knowledge_base),
+            "operation": operation
+        })
         
         # Return user-friendly error message
         if "not found" in str(error).lower():

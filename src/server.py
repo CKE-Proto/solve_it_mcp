@@ -54,7 +54,9 @@ from tools.solveit_tools import (
     GetAllMitigationsWithFullDetailTool,
 )
 from utils.logging import configure_logging, get_logger
-from utils.security_middleware import SecurityMiddleware, SecurityConfig, SecurityError
+from utils.security_middleware import SecurityMiddleware, SecurityError
+from utils.shared_security import SharedSecurityConfig
+from utils.knowledge_base_manager import SharedKnowledgeBase
 
 
 async def run_stdio_server(server: Server) -> None:
@@ -91,7 +93,20 @@ async def run_stdio_server(server: Server) -> None:
     except KeyboardInterrupt:
         logger.info("Received keyboard interrupt, shutting down gracefully")
     except Exception as e:
-        logger.critical(f"Server run loop failed: {e}")
+        # Import here to avoid module-level import
+        import traceback
+        
+        # Check if this is an ExceptionGroup (TaskGroup error)
+        if hasattr(e, 'exceptions') and hasattr(e, '__class__') and 'ExceptionGroup' in str(type(e)):
+            logger.critical(f"Server run loop failed with ExceptionGroup containing {len(e.exceptions)} exception(s):")
+            for i, exc in enumerate(e.exceptions):
+                logger.critical(f"  Exception {i+1}: {type(exc).__name__}: {exc}")
+                logger.critical(f"  Traceback: {''.join(traceback.format_exception(type(exc), exc, exc.__traceback__))}")
+        else:
+            # Handle regular exceptions
+            logger.critical(f"Server run loop failed: {type(e).__name__}: {e}")
+            logger.critical(f"Full traceback: {''.join(traceback.format_exception(type(e), e, e.__traceback__))}")
+        
         logger.critical("Server terminating due to critical error")
         raise
     finally:
@@ -136,58 +151,99 @@ async def main() -> None:
         logger.critical("Server startup aborted - SDK initialization failed")
         raise
 
-    # Initialize security middleware (Layer 1 protections)
+    # Initialize shared security configuration and middleware (Layer 1 protections)
     try:
-        security_config = SecurityConfig()
-        security = SecurityMiddleware(security_config)
+        logger.info("Initializing shared security configuration")
+        shared_security_manager = SharedSecurityConfig()
+        shared_security_config = shared_security_manager.get_security_config()
+        
+        # Log shared security config stats
+        sec_stats = shared_security_manager.get_security_config_stats()
+        logger.info(
+            f"Shared security configuration initialized: "
+            f"max_input_size={sec_stats['max_input_size']}, "
+            f"default_timeout={sec_stats['default_timeout']}s, "
+            f"singleton_id: {sec_stats['singleton_id']}"
+        )
+        
+        security = SecurityMiddleware(shared_security_config)
         logger.info("Security middleware initialized with Layer 1 protections")
     except Exception as e:
         logger.critical(f"Failed to initialize security middleware: {e}")
         logger.critical("Server startup aborted - security initialization failed")
         raise
 
-    # Initialize and register SOLVE-IT tools
+    # PHASE 1: Initialize shared knowledge base ONCE
     try:
+        logger.info("Initializing shared SOLVE-IT knowledge base (replaces 20x individual initialization)")
+        shared_kb_manager = SharedKnowledgeBase()
+        shared_kb = shared_kb_manager.get_knowledge_base()
+        data_path = shared_kb_manager.get_data_path()
+        
+        # Log shared KB stats
+        stats = shared_kb_manager.get_knowledge_base_stats()
+        logger.info(
+            f"Shared knowledge base initialized: {stats['techniques']} techniques, "
+            f"{stats['weaknesses']} weaknesses, {stats['mitigations']} mitigations, "
+            f"singleton_id: {stats['singleton_id']}"
+        )
+        
+    except Exception as e:
+        logger.critical(f"Failed to initialize shared knowledge base: {e}")
+        logger.critical("Server startup aborted - shared knowledge base initialization failed")
+        raise
+
+    # PHASE 2: Initialize and register SOLVE-IT tools WITHOUT individual KB initialization
+    try:
+        logger.info("Creating SOLVE-IT tools with shared knowledge base architecture")
+        
+        # Create tools with init_kb=False to prevent individual KB initialization
         tools: list[BaseTool[Any]] = [
             # Core query tools
-            GetDatabaseDescriptionTool(),
-            SearchTool(),
-            GetTechniqueDetailsTool(),
-            GetWeaknessDetailsTool(),
-            GetMitigationDetailsTool(),
+            GetDatabaseDescriptionTool(init_kb=False),
+            SearchTool(init_kb=False),
+            GetTechniqueDetailsTool(init_kb=False),
+            GetWeaknessDetailsTool(init_kb=False),
+            GetMitigationDetailsTool(init_kb=False),
             
             # Forward relationship query tools
-            GetWeaknessesForTechniqueTool(),
-            GetMitigationsForWeaknessTool(),
+            GetWeaknessesForTechniqueTool(init_kb=False),
+            GetMitigationsForWeaknessTool(init_kb=False),
             
             # Reverse relationship query tools
-            GetTechniquesForWeaknessTool(),
-            GetWeaknessesForMitigationTool(),
-            GetTechniquesForMitigationTool(),
+            GetTechniquesForWeaknessTool(init_kb=False),
+            GetWeaknessesForMitigationTool(init_kb=False),
+            GetTechniquesForMitigationTool(init_kb=False),
             
             # Objective/Mapping management tools
-            ListObjectivesTool(),
-            GetTechniquesForObjectiveTool(),
-            ListAvailableMappingsTool(),
-            LoadObjectiveMappingTool(),
+            ListObjectivesTool(init_kb=False),
+            GetTechniquesForObjectiveTool(init_kb=False),
+            ListAvailableMappingsTool(init_kb=False),
+            LoadObjectiveMappingTool(init_kb=False),
             
             # Bulk retrieval tools (concise format)
-            GetAllTechniquesWithNameAndIdTool(),
-            GetAllWeaknessesWithNameAndIdTool(),
-            GetAllMitigationsWithNameAndIdTool(),
+            GetAllTechniquesWithNameAndIdTool(init_kb=False),
+            GetAllWeaknessesWithNameAndIdTool(init_kb=False),
+            GetAllMitigationsWithNameAndIdTool(init_kb=False),
             
             # Bulk retrieval tools (full detail format)
-            GetAllTechniquesWithFullDetailTool(),
-            GetAllWeaknessesWithFullDetailTool(),
-            GetAllMitigationsWithFullDetailTool(),
+            GetAllTechniquesWithFullDetailTool(init_kb=False),
+            GetAllWeaknessesWithFullDetailTool(init_kb=False),
+            GetAllMitigationsWithFullDetailTool(init_kb=False),
         ]
+
+        # PHASE 3: Pass shared knowledge base to all tools
+        logger.info("Configuring tools with shared knowledge base instance")
+        for tool in tools:
+            tool.set_shared_knowledge_base(shared_kb, data_path)
 
         # Auto-generate tool registry and metadata
         tool_registry: Dict[str, BaseTool[Any]] = {tool.name: tool for tool in tools}
         available_tools: list[str] = [tool.name for tool in tools]
 
-        logger.info(f"Initialized {len(tools)} SOLVE-IT tools: {available_tools}")
+        logger.info(f"Successfully configured {len(tools)} SOLVE-IT tools with shared architecture: {available_tools}")
         logger.info("All tools passed Layer 2 security configuration validation")
+        logger.info(f"Performance improvement: 1x knowledge base initialization instead of {len(tools)}x")
 
     except Exception as e:
         logger.critical(f"Failed to initialize SOLVE-IT tools: {e}")
@@ -288,7 +344,7 @@ async def main() -> None:
             )
 
             # LAYER 1 SECURITY: Execution timeout (automatic, cannot be bypassed)
-            tool_timeout = getattr(tool, 'execution_timeout', security_config.default_timeout)
+            tool_timeout = getattr(tool, 'execution_timeout', shared_security_config.default_timeout)
             
             async with security.execution_timeout(tool_timeout, name):
                 execution_start = time.time()
