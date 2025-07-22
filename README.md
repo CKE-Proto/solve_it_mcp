@@ -1,6 +1,6 @@
 # SOLVE-IT MCP Server
 
-**Production-ready MCP server providing LLM access to the SOLVE-IT Digital Forensics Knowledge Base.**
+**MCP server providing LLM access to the SOLVE-IT Digital Forensics Knowledge Base.**
 
 SOLVE-IT is a systematic digital forensics knowledge base inspired by MITRE ATT&CK, containing comprehensive mappings of investigation techniques, weaknesses, and mitigations. This MCP server exposes the entire SOLVE-IT knowledge base through tools that enable LLMs to assist with discussions and use cases related to digital forensics.
 
@@ -12,6 +12,8 @@ SOLVE-IT provides a structured approach to digital forensics investigations thro
 - **Weaknesses** (W1001, W1002...): Potential problems/limitations of techniques  
 - **Mitigations** (M1001, M1002...): Ways to address weaknesses
 - **Objectives**: Categories that organize techniques by investigation goals
+
+See the main repository here: https://github.com/SOLVE-IT-DF/solve-it
 
 ## Quick Start
 
@@ -174,76 +176,7 @@ Switch to a different objective mapping (e.g., carrier.json, dfrws.json).
 - `get_all_mitigations_with_full_detail` - All mitigations with complete details
 
 ## Usage Examples
-
-### Digital Forensics Investigation Workflow
-
-**1. Start Investigation - Overview**
-```
-Tool: get_database_description
-→ Get overview of available investigation resources
-```
-
-**2. Search for Relevant Techniques**
-```
-Tool: search
-Parameters: {"keywords": "malware analysis", "item_types": ["techniques"]}
-→ Find techniques related to malware investigation
-```
-
-**3. Analyze Specific Technique**
-```
-Tool: get_technique_details
-Parameters: {"technique_id": "T1005"}
-→ Get detailed methodology for the technique
-```
-
-**4. Identify Potential Issues**
-```
-Tool: get_weaknesses_for_technique
-Parameters: {"technique_id": "T1005"}
-→ Understand limitations and potential problems
-```
-
-**5. Find Solutions**
-```
-Tool: get_mitigations_for_weakness
-Parameters: {"weakness_id": "W1023"}
-→ Get mitigation strategies for identified weaknesses
-```
-
-**6. Objective-Based Investigation**
-```
-Tool: list_objectives
-→ See available investigation objectives
-
-Tool: get_techniques_for_objective
-Parameters: {"objective_name": "Data Recovery"}
-→ Get all techniques for data recovery investigations
-```
-
-### Case Study: Network Incident Response
-
-```
-# 1. Search for network-related techniques
-Tool: search
-Parameters: {"keywords": "network traffic analysis"}
-
-# 2. Get details on specific network analysis technique
-Tool: get_technique_details
-Parameters: {"technique_id": "T1040"}
-
-# 3. Check for potential weaknesses in network analysis
-Tool: get_weaknesses_for_technique
-Parameters: {"technique_id": "T1040"}
-
-# 4. Find mitigations for identified weaknesses
-Tool: get_mitigations_for_weakness
-Parameters: {"weakness_id": "W1015"}
-
-# 5. Switch to specialized mapping for network investigations
-Tool: load_objective_mapping
-Parameters: {"filename": "carrier.json"}
-```
+<Pending>
 
 ## Data Configuration
 
@@ -291,21 +224,6 @@ The server provides comprehensive error handling:
 }
 ```
 
-### Continue.dev
-
-```json
-{
-  "mcp": {
-    "servers": {
-      "solveit": {
-        "command": "python3",
-        "args": ["/path/to/solve_it_mcp/src/server.py"]
-      }
-    }
-  }
-}
-```
-
 ## Security Features
 
 - **Read-only access**: Server only reads from the knowledge base
@@ -325,10 +243,6 @@ python3 -m pytest solve_it_mcp/tests/integration/ -v
 # Run unit tests
 python3 -m pytest solve_it_mcp/tests/unit/ -v
 ```
-
-### Adding Custom Tools
-
-The server uses a type-safe tool pattern. See `src/tools/solveit_tools.py` for examples.
 
 ## Troubleshooting
 
